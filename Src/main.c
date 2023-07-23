@@ -27,10 +27,31 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
+typedef enum { 
+  
+  LED_OFF ,
+  LED_1   ,
+  LED_2   ,
+  LED_3   , 
+
+} LED_STATE;
+
+typedef struct {
+
+  uint32_t press_time ;
+  LED_STATE what_led ; 
+  uint8_t is_press ; 
+  uint8_t state ; 
+
+} Button_State ; 
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define HOLD_TIME 3000
+#define DEBOUNCE_TIME 50
+
 
 /* USER CODE END PD */
 
@@ -40,14 +61,29 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+TIM_HandleTypeDef htim2;
 
 /* USER CODE BEGIN PV */
 
+uint32_t last_time =0 ;
+
+uint32_t hold_time = 0 ;
+
+uint8_t buttonstate ;
+
+Button_State button = {
+  .press_time = 0 ,
+  .what_led   = 0 ,
+  .is_press   = 1 ,
+  .state      = 0 ,
+} ;
+ 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -55,6 +91,38 @@ static void MX_GPIO_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+	if(htim->Instance == TIM2)
+	{
+		button.press_time += 1 ;
+		hold_time += 1 ;
+	}
+}
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+
+//  HAL_GPIO_WritePin(Led_1_GPIO_Port, Led_1_Pin, 0);
+  if (button.press_time - last_time >= DEBOUNCE_TIME)
+  {
+	  hold_time = 0;
+
+	  buttonstate = HAL_GPIO_ReadPin(GPIOC, Button_Pin) ;
+
+	  if( buttonstate != button.is_press)
+	  {
+		  button.is_press = buttonstate;
+
+		  if( button.is_press == 0 )
+		  {
+			  button.state = (button.state >= LED_3) ? LED_1 : button.state+1 ;
+		  }
+	  }
+  }
+  last_time = button.press_time;
+  button.is_press = 1  ;
+}
 /* USER CODE END 0 */
 
 /**
@@ -85,8 +153,14 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
+  //HAL_TIM_Base_Init(&htim2);
+  HAL_TIM_Base_Start_IT(&htim2);
+
+  HAL_GPIO_WritePin(GPIOC, Led_3_Pin|Led_2_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(Led_1_GPIO_Port, Led_1_Pin, GPIO_PIN_SET);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -96,6 +170,32 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
+	  if(button.state == LED_1 && HAL_GPIO_ReadPin(GPIOC, Button_Pin)==1)
+	  {
+		  HAL_GPIO_WritePin(Led_1_GPIO_Port, Led_1_Pin, GPIO_PIN_RESET);
+		  HAL_GPIO_WritePin(GPIOC, Led_3_Pin|Led_2_Pin, GPIO_PIN_SET);
+
+	  }
+	  else if (button.state == LED_2 && HAL_GPIO_ReadPin(GPIOC, Button_Pin)==1)
+	  {
+		  HAL_GPIO_WritePin(Led_2_GPIO_Port, Led_2_Pin, GPIO_PIN_RESET);
+		  HAL_GPIO_WritePin(GPIOC, Led_3_Pin, GPIO_PIN_SET);
+		  HAL_GPIO_WritePin(Led_1_GPIO_Port, Led_1_Pin, GPIO_PIN_SET);
+	  }
+	  else if (HAL_GPIO_ReadPin(GPIOC, Button_Pin)==1 && button.state == LED_3)
+	  {
+		  HAL_GPIO_WritePin(Led_3_GPIO_Port, Led_3_Pin, GPIO_PIN_RESET);
+		  HAL_GPIO_WritePin(GPIOC, Led_2_Pin, GPIO_PIN_SET);
+		  HAL_GPIO_WritePin(Led_1_GPIO_Port, Led_1_Pin, GPIO_PIN_SET);
+	  }
+	  if (HAL_GPIO_ReadPin(GPIOC, Button_Pin)==0 && hold_time >= HOLD_TIME)
+	  {
+		  HAL_GPIO_WritePin(GPIOC, Led_3_Pin|Led_2_Pin, GPIO_PIN_SET);
+		  HAL_GPIO_WritePin(Led_1_GPIO_Port, Led_1_Pin, GPIO_PIN_SET);
+		  button.state = LED_OFF ;
+	  }
+
   }
   /* USER CODE END 3 */
 }
@@ -142,6 +242,51 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 16-1;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 1000-1;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -154,23 +299,34 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, Led_2_Pin|Led_3_Pin|Led_1_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, Led_3_Pin|Led_2_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(Led_1_GPIO_Port, Led_1_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin : Button_Pin */
   GPIO_InitStruct.Pin = Button_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(Button_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : Led_2_Pin Led_3_Pin Led_1_Pin */
-  GPIO_InitStruct.Pin = Led_2_Pin|Led_3_Pin|Led_1_Pin;
+  /*Configure GPIO pins : Led_3_Pin Led_2_Pin */
+  GPIO_InitStruct.Pin = Led_3_Pin|Led_2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : Led_1_Pin */
+  GPIO_InitStruct.Pin = Led_1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(Led_1_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
